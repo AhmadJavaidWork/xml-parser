@@ -1,18 +1,17 @@
 const std = @import("std");
 
 pub const Type = enum(u8) {
-    start_element,
-    end_element,
-    value,
-    double_quotes,
+    lt,
     gt,
+    double_quotes,
+    slash,
     bang,
     dash,
     question_mark,
     equal,
     left_bracket,
     right_bracket,
-    text,
+    word,
     unknown,
 };
 

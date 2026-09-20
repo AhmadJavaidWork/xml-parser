@@ -17,7 +17,7 @@ pub fn init(input: []const u8) Self {
     return l;
 }
 
-pub fn nextToken(self: *Self) !?Token {
+pub fn nextToken(self: *Self) ?Token {
     var token: ?Token = null;
 
     self.skipWhiteSpace();
@@ -25,63 +25,48 @@ pub fn nextToken(self: *Self) !?Token {
     switch (self.ch) {
         0 => {},
         '<' => {
-            if (utils.isLetter(self.peekChar())) {
-                self.takeChar();
-                const start: usize = self.position;
-                self.takeElement();
-                var end: usize = self.position;
-                if (self.peekChar() == '>') {
-                    end = self.read_position;
-                }
-                token = .{
-                    .token_type = Token.Type.start_element,
-                    .literal = self.input[start..end],
-                };
-            } else if (self.peekChar() == '/') {
-                self.takeChar();
-                if (utils.isLetter(self.peekChar())) {
-                    self.takeChar();
-                    const start: usize = self.position;
-                    self.takeDelimiter('>');
-                    const end: usize = self.read_position;
-                    self.takeChar();
-                    token = .{
-                        .token_type = Token.Type.end_element,
-                        .literal = self.input[start..end],
-                    };
-                } else {
-                    return error.InvalidXml;
-                }
-            } else {
-                return error.InvalidXml;
-            }
+            token = self.newToken(Token.Type.lt);
         },
         '>' => {
-            token = .{
-                .token_type = Token.Type.gt,
-                .literal = ">",
-            };
+            token = self.newToken(Token.Type.gt);
         },
+        '/' => {
+            token = self.newToken(Token.Type.slash);
+        },
+        '"' => {
+            token = self.newToken(Token.Type.double_quotes);
+        },
+        '=' => {
+            token = self.newToken(Token.Type.equal);
+        },
+        '?' => {
+            token = self.newToken(Token.Type.question_mark);
+        },
+
         else => {
             if (utils.isLetter(self.ch)) {
                 const start: usize = self.position;
-                self.takeDelimiter('<');
+                self.takeWord();
                 const end: usize = self.read_position;
                 token = .{
-                    .token_type = Token.Type.text,
+                    .token_type = Token.Type.word,
                     .literal = self.input[start..end],
                 };
             } else {
-                token = .{
-                    .token_type = Token.Type.unknown,
-                    .literal = self.input[self.position..self.read_position],
-                };
+                token = self.newToken(Token.Type.unknown);
             }
         },
     }
 
     self.takeChar();
     return token;
+}
+
+fn newToken(self: *Self, token_type: Token.Type) Token {
+    return .{
+        .token_type = token_type,
+        .literal = self.input[self.position..self.read_position],
+    };
 }
 
 fn skipWhiteSpace(self: *Self) void {
@@ -108,7 +93,7 @@ fn takeDelimiter(self: *Self, delimiter: u8) void {
 }
 
 fn takeWord(self: *Self) void {
-    while (self.ch != ' ' and self.ch != '\t' and self.ch != '\n' and self.ch != '\r' and self.ch != 0 and self.peekChar() != '<') {
+    while (utils.isLetter(self.peekChar())) {
         self.takeChar();
     }
 }
@@ -121,73 +106,132 @@ fn peekChar(self: *Self) u8 {
     }
 }
 
-fn takeElement(self: *Self) void {
-    while (self.ch != ' ' and self.ch != '\t' and self.ch != '\n' and self.ch != '\r' and self.ch != 0 and self.peekChar() != '>') {
-        self.takeChar();
-    }
-}
-
-test "test tokenize valid xml" {
+test "tokenize valid xml" {
     var l: Self = Self.init(
         \\<book>
-        \\  <title>Hello</title>
+        \\  <title>Programming in Go</title>
         \\</book>
     );
 
     try std.testing.expectEqual(0, l.position);
     try std.testing.expectEqual(1, l.read_position);
 
-    var token: ?Token = try l.nextToken();
-    try std.testing.expect(token != null);
-    if (token) |t| {
-        try std.testing.expectEqual(Token.Type.start_element, t.token_type);
-        try std.testing.expectEqualStrings("book", t.literal);
+    const expected_tokens = [_]Token{
+        .{ .token_type = Token.Type.lt, .literal = "<" },
+        .{ .token_type = Token.Type.word, .literal = "book" },
+        .{ .token_type = Token.Type.gt, .literal = ">" },
+        .{ .token_type = Token.Type.lt, .literal = "<" },
+        .{ .token_type = Token.Type.word, .literal = "title" },
+        .{ .token_type = Token.Type.gt, .literal = ">" },
+        .{ .token_type = Token.Type.word, .literal = "Programming" },
+        .{ .token_type = Token.Type.word, .literal = "in" },
+        .{ .token_type = Token.Type.word, .literal = "Go" },
+        .{ .token_type = Token.Type.lt, .literal = "<" },
+        .{ .token_type = Token.Type.slash, .literal = "/" },
+        .{ .token_type = Token.Type.word, .literal = "title" },
+        .{ .token_type = Token.Type.gt, .literal = ">" },
+        .{ .token_type = Token.Type.lt, .literal = "<" },
+        .{ .token_type = Token.Type.slash, .literal = "/" },
+        .{ .token_type = Token.Type.word, .literal = "book" },
+        .{ .token_type = Token.Type.gt, .literal = ">" },
+    };
+
+    var actual_token: ?Token = null;
+
+    for (expected_tokens) |et| {
+        actual_token = l.nextToken();
+        try std.testing.expect(actual_token != null);
+        if (actual_token) |at| {
+            try std.testing.expectEqual(et.token_type, at.token_type);
+            try std.testing.expectEqualStrings(et.literal, at.literal);
+        }
     }
 
-    token = try l.nextToken();
-    try std.testing.expect(token != null);
-    if (token) |t| {
-        try std.testing.expectEqual(Token.Type.gt, t.token_type);
-        try std.testing.expectEqualStrings(">", t.literal);
+    actual_token = l.nextToken();
+    try std.testing.expect(actual_token == null);
+    try std.testing.expect(l.position > l.input.len);
+    try std.testing.expect(l.read_position > l.input.len);
+    try std.testing.expectEqual(0, l.ch);
+}
+
+test "self closing elements with attrs" {
+    var l: Self = Self.init("<book id=\"b001\" category=\"programming\"/>");
+
+    try std.testing.expectEqual(0, l.position);
+    try std.testing.expectEqual(1, l.read_position);
+
+    const expected_tokens = [_]Token{
+        .{ .token_type = Token.Type.lt, .literal = "<" },
+        .{ .token_type = Token.Type.word, .literal = "book" },
+        .{ .token_type = Token.Type.word, .literal = "id" },
+        .{ .token_type = Token.Type.equal, .literal = "=" },
+        .{ .token_type = Token.Type.double_quotes, .literal = "\"" },
+        .{ .token_type = Token.Type.word, .literal = "b001" },
+        .{ .token_type = Token.Type.double_quotes, .literal = "\"" },
+        .{ .token_type = Token.Type.word, .literal = "category" },
+        .{ .token_type = Token.Type.equal, .literal = "=" },
+        .{ .token_type = Token.Type.double_quotes, .literal = "\"" },
+        .{ .token_type = Token.Type.word, .literal = "programming" },
+        .{ .token_type = Token.Type.double_quotes, .literal = "\"" },
+        .{ .token_type = Token.Type.slash, .literal = "/" },
+        .{ .token_type = Token.Type.gt, .literal = ">" },
+    };
+
+    var actual_token: ?Token = null;
+
+    for (expected_tokens) |et| {
+        actual_token = l.nextToken();
+        try std.testing.expect(actual_token != null);
+        if (actual_token) |at| {
+            try std.testing.expectEqual(et.token_type, at.token_type);
+            try std.testing.expectEqualStrings(et.literal, at.literal);
+        }
     }
 
-    token = try l.nextToken();
-    try std.testing.expect(token != null);
-    if (token) |t| {
-        try std.testing.expectEqual(Token.Type.start_element, t.token_type);
-        try std.testing.expectEqualStrings("title", t.literal);
+    actual_token = l.nextToken();
+    try std.testing.expect(actual_token == null);
+    try std.testing.expect(l.position > l.input.len);
+    try std.testing.expect(l.read_position > l.input.len);
+    try std.testing.expectEqual(0, l.ch);
+}
+
+test "tokenize xml declarations" {
+    var l: Self = Self.init("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
+
+    try std.testing.expectEqual(0, l.position);
+    try std.testing.expectEqual(1, l.read_position);
+
+    const expected_tokens = [_]Token{
+        .{ .token_type = Token.Type.lt, .literal = "<" },
+        .{ .token_type = Token.Type.question_mark, .literal = "?" },
+        .{ .token_type = Token.Type.word, .literal = "xml" },
+        .{ .token_type = Token.Type.word, .literal = "version" },
+        .{ .token_type = Token.Type.equal, .literal = "=" },
+        .{ .token_type = Token.Type.double_quotes, .literal = "\"" },
+        .{ .token_type = Token.Type.word, .literal = "1.0" },
+        .{ .token_type = Token.Type.double_quotes, .literal = "\"" },
+        .{ .token_type = Token.Type.word, .literal = "encoding" },
+        .{ .token_type = Token.Type.equal, .literal = "=" },
+        .{ .token_type = Token.Type.double_quotes, .literal = "\"" },
+        .{ .token_type = Token.Type.word, .literal = "UTF-8" },
+        .{ .token_type = Token.Type.double_quotes, .literal = "\"" },
+        .{ .token_type = Token.Type.question_mark, .literal = "?" },
+        .{ .token_type = Token.Type.gt, .literal = ">" },
+    };
+
+    var actual_token: ?Token = null;
+
+    for (expected_tokens) |et| {
+        actual_token = l.nextToken();
+        try std.testing.expect(actual_token != null);
+        if (actual_token) |at| {
+            try std.testing.expectEqual(et.token_type, at.token_type);
+            try std.testing.expectEqualStrings(et.literal, at.literal);
+        }
     }
 
-    token = try l.nextToken();
-    try std.testing.expect(token != null);
-    if (token) |t| {
-        try std.testing.expectEqual(Token.Type.gt, t.token_type);
-        try std.testing.expectEqualStrings(">", t.literal);
-    }
-
-    token = try l.nextToken();
-    try std.testing.expect(token != null);
-    if (token) |t| {
-        try std.testing.expectEqual(Token.Type.text, t.token_type);
-        try std.testing.expectEqualStrings("Hello", t.literal);
-    }
-
-    token = try l.nextToken();
-    try std.testing.expect(token != null);
-    if (token) |t| {
-        try std.testing.expectEqual(Token.Type.end_element, t.token_type);
-        try std.testing.expectEqualStrings("title", t.literal);
-    }
-
-    token = try l.nextToken();
-    try std.testing.expect(token != null);
-    if (token) |t| {
-        try std.testing.expectEqual(Token.Type.end_element, t.token_type);
-        try std.testing.expectEqualStrings("book", t.literal);
-    }
-
-    token = try l.nextToken();
-    try std.testing.expect(token == null);
+    actual_token = l.nextToken();
+    try std.testing.expect(actual_token == null);
     try std.testing.expect(l.position > l.input.len);
     try std.testing.expect(l.read_position > l.input.len);
     try std.testing.expectEqual(0, l.ch);
