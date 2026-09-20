@@ -42,7 +42,12 @@ pub fn nextToken(self: *Self) ?Token {
         '?' => {
             token = self.newToken(Token.Type.question_mark);
         },
-
+        '!' => {
+            token = self.newToken(Token.Type.bang);
+        },
+        '-' => {
+            token = self.newToken(Token.Type.dash);
+        },
         else => {
             if (utils.isLetter(self.ch)) {
                 const start: usize = self.position;
@@ -113,9 +118,6 @@ test "tokenize valid xml" {
         \\</book>
     );
 
-    try std.testing.expectEqual(0, l.position);
-    try std.testing.expectEqual(1, l.read_position);
-
     const expected_tokens = [_]Token{
         .{ .token_type = Token.Type.lt, .literal = "<" },
         .{ .token_type = Token.Type.word, .literal = "book" },
@@ -138,6 +140,8 @@ test "tokenize valid xml" {
 
     var actual_token: ?Token = null;
 
+    try std.testing.expectEqual(0, l.position);
+    try std.testing.expectEqual(1, l.read_position);
     for (expected_tokens) |et| {
         actual_token = l.nextToken();
         try std.testing.expect(actual_token != null);
@@ -156,9 +160,6 @@ test "tokenize valid xml" {
 
 test "self closing elements with attrs" {
     var l: Self = Self.init("<book id=\"b001\" category=\"programming\"/>");
-
-    try std.testing.expectEqual(0, l.position);
-    try std.testing.expectEqual(1, l.read_position);
 
     const expected_tokens = [_]Token{
         .{ .token_type = Token.Type.lt, .literal = "<" },
@@ -179,6 +180,8 @@ test "self closing elements with attrs" {
 
     var actual_token: ?Token = null;
 
+    try std.testing.expectEqual(0, l.position);
+    try std.testing.expectEqual(1, l.read_position);
     for (expected_tokens) |et| {
         actual_token = l.nextToken();
         try std.testing.expect(actual_token != null);
@@ -197,9 +200,6 @@ test "self closing elements with attrs" {
 
 test "tokenize xml declarations" {
     var l: Self = Self.init("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
-
-    try std.testing.expectEqual(0, l.position);
-    try std.testing.expectEqual(1, l.read_position);
 
     const expected_tokens = [_]Token{
         .{ .token_type = Token.Type.lt, .literal = "<" },
@@ -221,6 +221,42 @@ test "tokenize xml declarations" {
 
     var actual_token: ?Token = null;
 
+    try std.testing.expectEqual(0, l.position);
+    try std.testing.expectEqual(1, l.read_position);
+    for (expected_tokens) |et| {
+        actual_token = l.nextToken();
+        try std.testing.expect(actual_token != null);
+        if (actual_token) |at| {
+            try std.testing.expectEqual(et.token_type, at.token_type);
+            try std.testing.expectEqualStrings(et.literal, at.literal);
+        }
+    }
+
+    actual_token = l.nextToken();
+    try std.testing.expect(actual_token == null);
+    try std.testing.expect(l.position > l.input.len);
+    try std.testing.expect(l.read_position > l.input.len);
+    try std.testing.expectEqual(0, l.ch);
+}
+
+test "tokenize comments" {
+    var l: Self = Self.init("<!-- comment -->");
+
+    const expected_tokens = [_]Token{
+        .{ .token_type = Token.Type.lt, .literal = "<" },
+        .{ .token_type = Token.Type.bang, .literal = "!" },
+        .{ .token_type = Token.Type.dash, .literal = "-" },
+        .{ .token_type = Token.Type.dash, .literal = "-" },
+        .{ .token_type = Token.Type.word, .literal = "comment" },
+        .{ .token_type = Token.Type.dash, .literal = "-" },
+        .{ .token_type = Token.Type.dash, .literal = "-" },
+        .{ .token_type = Token.Type.gt, .literal = ">" },
+    };
+
+    var actual_token: ?Token = null;
+
+    try std.testing.expectEqual(0, l.position);
+    try std.testing.expectEqual(1, l.read_position);
     for (expected_tokens) |et| {
         actual_token = l.nextToken();
         try std.testing.expect(actual_token != null);
